@@ -1,7 +1,10 @@
 const {ApolloServer, gql} = require('apollo-server');
+const {RedisCache} = require('apollo-server-cache-redis');
 const {merge} = require('lodash');
 
 const Author = require('./author');
+const MoviesApi = require('./movies-api');
+const PersonalisationApi = require('./personalisation-api');
 
 // A schema is a collection of type definitions (hence "typeDefs")
 // that together define the "shape" of queries that are executed against
@@ -17,8 +20,14 @@ const typeDefs = gql`
         books: [Book]
     }
 
+    type Movie {
+        title: String
+    }
+
     type Query {
         getAuthors: [Author]
+        movie: Movie
+        mostViewedMovies: [Movie]
     }
 `;
 
@@ -26,6 +35,12 @@ const resolvers = {
   Query: {
     getAuthors(parent, args, context, info) {
       return Author.authors;
+    },
+    movie: async (_source, { id }, { dataSources }) => {
+      return dataSources.moviesApi.getMovie(id);
+    },
+    mostViewedMovies: async (_source, _args, { dataSources }) => {
+      return dataSources.moviesApi.getMostViewedMovies();
     },
   },
 };
@@ -35,6 +50,17 @@ const resolvers = {
 const server = new ApolloServer({
   typeDefs: typeDefs,
   resolvers: merge(resolvers, Author.resolvers),
+  cache: new RedisCache({
+    host: 'redis-host',
+    // other options...
+  }),
+  dataSources: () => ({
+    moviesApi: new MoviesApi.MoviesAPI(),
+    personalisationApi: new PersonalisationApi.PersonalizationAPI(),
+  }),
+  context: () => ({
+    token: 'foo',
+  }),
   tracing: true,
 });
 
