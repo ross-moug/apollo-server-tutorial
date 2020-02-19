@@ -1,4 +1,6 @@
+const {fs} = require('file-system');
 const {ApolloServer, gql} = require('apollo-server');
+const {AuthenticationError, UserInputError} = require('apollo-server-errors');
 const {RedisCache} = require('apollo-server-cache-redis');
 const {merge} = require('lodash');
 
@@ -27,7 +29,13 @@ const typeDefs = gql`
     type Query {
         getAuthors: [Author]
         movie: Movie
-        mostViewedMovies: [Movie]
+        mostViewedMovies: [Movie],
+        readError: String
+        authenticationError: String
+    }
+
+    type Mutation {
+        userInputError(input: String): String
     }
 `;
 
@@ -36,11 +44,26 @@ const resolvers = {
     getAuthors(parent, args, context, info) {
       return Author.authors;
     },
-    movie: async (_source, { id }, { dataSources }) => {
+    movie: async (_source, {id}, {dataSources}) => {
       return dataSources.moviesApi.getMovie(id);
     },
-    mostViewedMovies: async (_source, _args, { dataSources }) => {
+    mostViewedMovies: async (_source, _args, {dataSources}) => {
       return dataSources.moviesApi.getMostViewedMovies();
+    },
+    readError: (parent, args, context) => {
+      return fs.readFileSync('/non/existent/file');
+    },
+    authenticationError: (parent, args, context) => {
+      throw new AuthenticationError('must authenticate');
+    },
+  },
+  Mutation: {
+    userInputError: (parent, args, context, info) => {
+      if (args.input !== 'expected') {
+        throw new UserInputError('Form Arguments invalid', {
+          invalidArgs: Object.keys(args),
+        });
+      }
     },
   },
 };
@@ -50,10 +73,10 @@ const resolvers = {
 const server = new ApolloServer({
   typeDefs: typeDefs,
   resolvers: merge(resolvers, Author.resolvers),
-  cache: new RedisCache({
-    host: 'redis-host',
-    // other options...
-  }),
+  // cache: new RedisCache({
+  //   host: 'redis-host',
+  //   // other options...
+  // }),
   dataSources: () => ({
     moviesApi: new MoviesApi.MoviesAPI(),
     personalisationApi: new PersonalisationApi.PersonalizationAPI(),
@@ -61,7 +84,30 @@ const server = new ApolloServer({
   context: () => ({
     token: 'foo',
   }),
+  engine: {
+    // Rewrite errors before they are sent to Apollo Graph Manager
+    rewriteError(err) {
+      // Return `null` to avoid reporting `AuthenticationError`s
+      if (err instanceof AuthenticationError) {
+        return null;
+      }
+      // All other errors will be reported.
+      return err;
+    }
+  },
+  formatError: (err) => {
+    // Don't give the specific errors to the client.
+    if (err.originalError instanceof AuthenticationError) {
+      return new Error('Internal server error');
+    }
+
+    // Otherwise return the original error.  The error can also
+    // be manipulated in other ways, so long as it's returned.
+    return err;
+  },
   tracing: true,
+  // Pass debug as false to disable stacktraces
+  // debug: false,
 });
 
 // The `listen` method launches a web server.
