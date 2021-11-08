@@ -11,7 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "apollo-datasource-rest": "^0.7.0",
-    "apollo-server": "^2.10.1",
+    "apollo-server": "^2.25.3",
     "apollo-server-cache-redis": "^1.1.5",
     "apollo-server-errors": "^2.3.4",
     "dataloader": "^2.0.0",
